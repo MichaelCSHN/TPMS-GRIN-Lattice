@@ -49,22 +49,20 @@ cd D:\Luneburg\TPMS_Lattice_Generator
 gh repo create MichaelCSHN/TPMS-GRIN-Lattice --public --source=. --remote=michael --push
 ```
 
-若希望远程仍叫 `origin`，需先处理与现有 `origin`（当前指向 `Ian-Async/TPMS_Lattice_Generator`）的关系，避免混淆。
-
----
-
-## 与现有 `origin` 的关系
-
-当前 `origin` 指向：`https://github.com/Ian-Async/TPMS_Lattice_Generator.git`
-
-- **推送到 MichaelCSHN 新库**：使用 **额外 remote**（如 `michael`），**不要**在未确认前删除原 `origin`，便于与上游同步。  
-- 若 **MichaelCSHN 仓库应是唯一主远程**：可将 `origin` 改为新地址（慎用）：
+若希望远程名为 `origin`，创建仓库后可：
 
 ```powershell
-git remote rename origin upstream
 git remote add origin https://github.com/MichaelCSHN/TPMS-GRIN-Lattice.git
 git push -u origin main
 ```
+
+---
+
+## 当前仓库的远程（本机已切换）
+
+`origin` 仅指向 **`https://github.com/MichaelCSHN/TPMS-GRIN-Lattice.git`**，**不再**关联 `Ian-Async/TPMS_Lattice_Generator`。日常 `git pull` / `git push` 即对该仓库。
+
+若曾添加过 `michael` 远程，已合并为上述 `origin`，无需额外操作。
 
 ---
 
