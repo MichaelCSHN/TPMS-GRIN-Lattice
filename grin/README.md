@@ -8,7 +8,14 @@
 
 ## 用法
 
-在仓库根目录：
+### 图形界面（推荐）
+
+```bash
+conda activate tpms
+python grin_gui.py
+```
+
+### 命令行
 
 ```bash
 conda activate tpms

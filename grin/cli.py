@@ -33,16 +33,18 @@ def merge_dict(base: dict, override: dict | None) -> dict:
     return out
 
 
-def run_grin_export(
+def compute_grin_mesh(
     radius_mm: float,
     n_layers: int,
     epsilon_matrix: float,
     epsilon_air: float,
     res: int,
-    out_stl: Path,
     type_tpms: str = "G",
-    report_json: Path | None = None,
-) -> dict:
+) -> tuple:
+    """
+    仅计算龙伯分层 TPMS 网格，不写文件。
+    返回 (verts, faces, meta_layers, report_extra)
+    """
     layers = luneburg.luneburg_layers_table(radius_mm, n_layers, epsilon_air, epsilon_matrix)
     r_edges, _ = luneburg.build_radial_layers(radius_mm, n_layers)
 
@@ -72,6 +74,41 @@ def run_grin_export(
 
     verts, faces = compute_tpms_radial_shell_quantiles(st, res, list(r_edges), quantiles)
 
+    report_extra: dict = {}
+    try:
+        import trimesh
+
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+        vol = float(mesh.volume)
+        v_ball = (4.0 / 3.0) * 3.14159265 * (radius_mm**3)
+        report_extra["volume_mm3"] = vol
+        vf_ball = vol / v_ball if v_ball > 0 else None
+        report_extra["volume_fraction_in_ball_approx"] = vf_ball
+        if vf_ball is not None and vf_ball > 1.0:
+            report_extra["volume_note"] = (
+                "立方体域内周期结构，实体可超出内接球；体积/球体积仅供参考，非严格球内 Vf。"
+            )
+    except Exception as e:
+        report_extra["volume_note"] = f"trimesh 体积未计算: {e}"
+
+    return verts, faces, meta_layers, report_extra
+
+
+def run_grin_export(
+    radius_mm: float,
+    n_layers: int,
+    epsilon_matrix: float,
+    epsilon_air: float,
+    res: int,
+    out_stl: Path,
+    type_tpms: str = "G",
+    report_json: Path | None = None,
+) -> dict:
+    verts, faces, meta_layers, report_extra = compute_grin_mesh(
+        radius_mm, n_layers, epsilon_matrix, epsilon_air, res, type_tpms
+    )
+
+    mod = get_mixer()
     out_stl.parent.mkdir(parents=True, exist_ok=True)
     mod.write_stl_binary_with_progress(str(out_stl), faces, verts)
 
@@ -83,23 +120,8 @@ def run_grin_export(
         "res": res,
         "layers": meta_layers,
         "stl": str(out_stl.resolve()),
+        **report_extra,
     }
-
-    try:
-        import trimesh
-
-        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-        vol = float(mesh.volume)
-        v_ball = (4.0 / 3.0) * 3.14159265 * (radius_mm**3)
-        report["volume_mm3"] = vol
-        vf_ball = vol / v_ball if v_ball > 0 else None
-        report["volume_fraction_in_ball_approx"] = vf_ball
-        if vf_ball is not None and vf_ball > 1.0:
-            report["volume_note"] = (
-                "立方体域内周期结构，实体可超出内接球；体积/球体积仅供参考，非严格球内 Vf。"
-            )
-    except Exception as e:
-        report["volume_note"] = f"trimesh 体积未计算: {e}"
 
     if report_json:
         report_json.parent.mkdir(parents=True, exist_ok=True)

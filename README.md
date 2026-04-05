@@ -46,6 +46,15 @@ python -m grin.cli --config config/grin_defaults.yaml --out output/luneburg_tpms
 
 See `grin/README.md` for module layout. The original GUI file `TPMS_Mixer_v1.1.0.py` is **not modified**.
 
+### GRIN / Luneburg GUI (new)
+
+```bash
+conda activate tpms
+python grin_gui.py
+```
+
+PySide6 + PyVista: parameter panel, 3D preview, export STL + JSON.
+
 ---
 
 ## 🚀 Download & Run
