@@ -37,7 +37,7 @@ Design inputs, technical specification, FDM-oriented defaults, and GitHub push i
 
 ### GRIN / Luneburg CLI (new)
 
-From the repo root (requires `pyyaml`, `trimesh` in addition to `requirements.txt`):
+From the repo root, with **`conda activate tpms`**:
 
 ```bash
 pip install -r requirements.txt
@@ -64,12 +64,18 @@ If you just want to use the software without installing Python:
 If you want to run or modify the code:
 
 1. Clone this repository (or download as ZIP).
-2. Install dependencies:
+2. Use the **`tpms`** Conda environment (recommended):
    ```bash
-   pip install -r requirements.txt
+   conda env create -f environment.yml
+   conda activate tpms
+   ```
+   Or install with pip only: `pip install -r requirements.txt`
 3. Launch the GUI:
    ```bash
    python TPMS_Mixer_v1.1.0.py
+   ```
+
+**Development / debugging / dependency updates**: always use **`conda activate tpms`** and keep `requirements.txt` in sync with `environment.yml` — see [docs/05_ENVIRONMENT.md](docs/05_ENVIRONMENT.md) (Chinese).
 
 ---
 

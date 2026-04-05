@@ -8,3 +8,5 @@
 | `lattice_registry.yaml` | 晶格类型代码与实现状态（与 `docs/03_LATTICE_CATALOG.md` 同步） |
 
 应用启动或 CLI 应支持：`--config path/to/override.yaml` 合并覆盖默认值。
+
+环境与依赖同步见 **`docs/05_ENVIRONMENT.md`**（使用 **`tpms`** Conda 环境）。

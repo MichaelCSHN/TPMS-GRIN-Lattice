@@ -1,3 +1,5 @@
+# 与 environment.yml 中 pip 段同步；安装前：conda activate tpms
+# 详见 docs/05_ENVIRONMENT.md
 numpy
 scikit-image
 PySide6
