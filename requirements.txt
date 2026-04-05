@@ -4,3 +4,5 @@ PySide6
 pyvista
 pyvistaqt
 vtk
+pyyaml
+trimesh

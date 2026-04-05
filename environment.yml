@@ -1,0 +1,16 @@
+name: tpms
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - scikit-image
+  - vtk
+  - pip
+  - pip:
+    - PySide6
+    - pyvista
+    - pyvistaqt
+    - pyyaml
+    - trimesh

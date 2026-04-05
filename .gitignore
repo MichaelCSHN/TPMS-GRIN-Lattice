@@ -22,3 +22,6 @@ venv/
 # build
 dist/
 build/
+
+# grin CLI 输出
+output/

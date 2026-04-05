@@ -33,6 +33,17 @@ Design inputs, technical specification, FDM-oriented defaults, and GitHub push i
 - `docs/GITHUB_NEW_REPO.md` — create `https://github.com/MichaelCSHN/...` and push  
 - `config/` — YAML defaults (`grin_defaults.yaml`, `process_fdm.yaml`, `emt_mixing.yaml`)
 
+### GRIN / Luneburg CLI (new)
+
+From the repo root (requires `pyyaml`, `trimesh` in addition to `requirements.txt`):
+
+```bash
+pip install -r requirements.txt
+python -m grin.cli --config config/grin_defaults.yaml --out output/luneburg_tpms.stl --report output/luneburg_report.json --res 32
+```
+
+See `grin/README.md` for module layout. The original GUI file `TPMS_Mixer_v1.1.0.py` is **not modified**.
+
 ---
 
 ## 🚀 Download & Run

@@ -1,5 +1,9 @@
 """
-GRIN / 龙伯透镜设计模块占位（实现按 docs/02_SPEC.md 分阶段迁入）。
+GRIN / 龙伯透镜：EMT、径向分层 TPMS 生成（CLI：`python -m grin.cli`）。
+不修改 TPMS_Mixer_v1.1.0.py。
 """
 
-__version__ = "0.0.0"
+from grin import emt, luneburg
+
+__version__ = "0.1.0"
+__all__ = ["emt", "luneburg"]
