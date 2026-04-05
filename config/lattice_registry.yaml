@@ -1,0 +1,62 @@
+# 晶格类型注册表：与 docs/03_LATTICE_CATALOG.md 同步
+# status: planned | implemented
+
+version: 1
+
+shell_tpms:
+  - code: P
+    name: Primitive
+    status: implemented
+    module_hint: TPMS_Mixer_v1.1.0.get_field
+  - code: G
+    name: Gyroid
+    status: implemented
+  - code: D
+    name: Diamond
+    status: implemented
+  - code: I
+    name: I-WP
+    status: implemented
+  - code: N
+    name: Neovius
+    status: implemented
+  - code: FRD
+    name: F-RD
+    status: planned
+  - code: OCTO
+    name: OCTO
+    status: planned
+
+truss:
+  - code: SC
+    name: Simple cubic truss
+    status: planned
+    implicit: cylinder_sdf_union
+  - code: BCC
+    name: Body-centered cubic truss
+    status: planned
+  - code: FCC
+    name: Face-centered cubic truss
+    status: planned
+  - code: OCTET
+    name: Octet truss
+    status: planned
+
+plate:
+  - code: SC_PLATE
+    name: SC plate lattice
+    status: planned
+  - code: BCC_PLATE
+    name: BCC plate lattice
+    status: planned
+  - code: FCC_PLATE
+    name: FCC plate lattice
+    status: planned
+
+hybrid:
+  - code: SHELL_TRUSS
+    name: TPMS shell + periodic truss (R-function)
+    status: planned
+
+notes:
+  - 凡纳入本 registry 的类型须支持 Vf(r) 或等价参数（杆径/板厚/iso/t）。

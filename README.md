@@ -30,6 +30,8 @@ Design inputs, technical specification, FDM-oriented defaults, and GitHub push i
 - `docs/00_INDEX.md` — document index  
 - `docs/01_DEV_INPUT.md` — development inputs (Chinese)  
 - `docs/02_SPEC.md` — technical specification (Chinese)  
+- `docs/03_LATTICE_CATALOG.md` — lattice type catalog (implicit + \(V_f(r)\))  
+- `docs/04_TECH_STACK_FULLSCALE.md` — full-scale design / modeling / visualization stack  
 - `docs/GITHUB_NEW_REPO.md` — create `https://github.com/MichaelCSHN/...` and push  
 - `config/` — YAML defaults (`grin_defaults.yaml`, `process_fdm.yaml`, `emt_mixing.yaml`)
 

@@ -67,6 +67,10 @@ n(r) = n_0 \sqrt{2 - \left(\frac{r}{R}\right)^2}, \quad 0 \le r \le R
 - **Shell（TPMS）**：延续现有 `get_field` + \(|\Phi|\) 与 iso/厚度调制。  
 - **Truss / Plate / Hybrid**：用 **SDF / R-function** 等在笛卡尔体素上求 **实体指示**，与 shell **同一套** 体积统计与 MC 管线。
 
+**扩展范围**：在统一框架下 **尽可能增加可选格型**（TPMS 族、桁架/板系、混合），见 **[03_LATTICE_CATALOG.md](03_LATTICE_CATALOG.md)** 与 **`config/lattice_registry.yaml`**。
+
+**全尺寸建模与显示** 的技术选型与分层依赖见 **[04_TECH_STACK_FULLSCALE.md](04_TECH_STACK_FULLSCALE.md)**（GPU 体素、VTK 大规模网格、分块与 LOD 等）。
+
 ### 3.4 体积校正
 
 - **真值**：水密网格的 **\(V_{\mathrm{solid}}/V_{\Omega}\)**；分壳时用 **球壳与实体交** 的体积。  
@@ -122,3 +126,4 @@ sliding_window_metrics(mesh, a_min, shell_bins) -> MetricsReport
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 1.0 | 2026-04-05 | 首版 |
+| 1.1 | 2026-04-06 | 引用晶格目录与全尺寸技术栈文档 |
