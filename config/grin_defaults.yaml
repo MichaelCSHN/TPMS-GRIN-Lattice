@@ -1,0 +1,28 @@
+# GRIN / 龙伯透镜 — 默认设计输入（可被用户配置覆盖）
+# 文档依据：docs/01_DEV_INPUT.md
+
+version: 1
+
+electromagnetics:
+  frequency_ghz: 10.0          # 首版点频（微波）
+  mode: luneburg_classic       # 剖面类型，实现时与公式锁定一致
+
+geometry:
+  radius_mm:
+    default: 100.0
+    min: 50.0
+    max: 150.0
+  radial_layers: 6             # 3 ~ 10
+
+material:
+  epsilon_matrix:
+    default: 2.8
+    min: 2.5
+    max: 3.0
+  inclusion: air               # epsilon ≈ 1
+
+calibration:
+  vf_tolerance: 0.01           # |Vf_geom - Vf_target| 默认容差，可调 0.005~0.02
+
+metrics:
+  sliding_cell_scale: process_min_feature  # 与 FDM 最小特征联动；也可填数值(mm)

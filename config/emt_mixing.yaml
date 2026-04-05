@@ -1,0 +1,17 @@
+# 等效介质：正/反问题默认选项
+
+version: 1
+
+default_law: maxwell_garnett   # 可选: maxwell_garnett, bruggeman
+
+maxwell_garnett:
+  matrix_phase: solid
+  inclusion_phase: void
+  # 反问题：求 Vf 使 eff_eps = target
+
+bruggeman:
+  symmetric: true
+
+clamp:
+  vf_min: 0.0
+  vf_max: 1.0

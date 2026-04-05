@@ -23,6 +23,18 @@ If you work with **Gyroid / Diamond / Primitive** (and friends), want controllab
 
 ---
 
+## 📐 GRIN / Luneburg development (roadmap)
+
+Design inputs, technical specification, FDM-oriented defaults, and GitHub push instructions for a **MichaelCSHN** fork or new remote:
+
+- `docs/00_INDEX.md` — document index  
+- `docs/01_DEV_INPUT.md` — development inputs (Chinese)  
+- `docs/02_SPEC.md` — technical specification (Chinese)  
+- `docs/GITHUB_NEW_REPO.md` — create `https://github.com/MichaelCSHN/...` and push  
+- `config/` — YAML defaults (`grin_defaults.yaml`, `process_fdm.yaml`, `emt_mixing.yaml`)
+
+---
+
 ## 🚀 Download & Run
 
 ### Option A — Windows App (Release) ✅ Recommended

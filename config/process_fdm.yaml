@@ -1,0 +1,27 @@
+# 首选工艺：FDM（熔融沉积）
+# 数值为常见桌面机起点，正式项目需按机床与材料标定
+
+version: 1
+
+process: FDM
+
+nozzle:
+  diameter_mm: 0.4
+
+layer:
+  height_mm: 0.2
+
+# 最小可靠特征（壁厚/杆径下界建议），与喷嘴直径联动
+min_feature_mm:
+  conservative: 1.0            # ≈ 2.5 * D(0.4)
+  aggressive: 0.8              # ≈ 2.0 * D，风险更高
+
+# 后验检查用（度）
+overhang:
+  max_angle_deg: 45
+
+build_direction:
+  axis: Z                      # 层叠方向
+
+notes:
+  - FDM 面内与 Z 向介电/力学各向异性可能影响等效球对称 ε(r)，需在报告中评估角向波动。
