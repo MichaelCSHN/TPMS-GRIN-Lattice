@@ -8,3 +8,4 @@
 | [04_TECH_STACK_FULLSCALE.md](04_TECH_STACK_FULLSCALE.md) | **全尺寸设计/建模/显示** 技术栈与演进策略 |
 | [05_ENVIRONMENT.md](05_ENVIRONMENT.md) | **`tpms` Conda 环境**：运行、调试、**依赖同步更新** |
 | [GITHUB_NEW_REPO.md](GITHUB_NEW_REPO.md) | 在 GitHub `MichaelCSHN` 账户下新建仓库并推送 |
+| [06_DESIGN_LOGIC_7_STEPS.md](06_DESIGN_LOGIC_7_STEPS.md) | **七步设计逻辑**与代码/GUI 逐项对照 |

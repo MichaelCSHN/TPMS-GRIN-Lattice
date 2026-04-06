@@ -28,6 +28,7 @@ If you work with **Gyroid / Diamond / Primitive** (and friends), want controllab
 Design inputs, technical specification, FDM-oriented defaults, and GitHub push instructions for a **MichaelCSHN** fork or new remote:
 
 - `docs/00_INDEX.md` — document index  
+- `docs/06_DESIGN_LOGIC_7_STEPS.md` — **seven-step design logic** vs code/GUI (Chinese)  
 - `docs/01_DEV_INPUT.md` — development inputs (Chinese)  
 - `docs/02_SPEC.md` — technical specification (Chinese)  
 - `docs/03_LATTICE_CATALOG.md` — lattice type catalog (implicit + \(V_f(r)\))  

@@ -36,8 +36,17 @@ import pyvista as pv
 
 from grin.cli import compute_grin_mesh
 from grin import metrics_geo
-from grin.lens_profiles import LensProduct, design_curves_sampled, wavelength_mm_vacuum, LayeringMode
+from grin.vf_optimizer import optimize_quantiles_iterative
+from grin.lens_profiles import (
+    LensProduct,
+    LayeringMode,
+    build_shell_table,
+    design_curves_sampled,
+    shell_stair_targets,
+    wavelength_mm_vacuum,
+)
 from grin.gui.plot_panel import GrinPlotPanel
+from grin.design_audit import GUI_SPEC_AUDIT_BRIEF
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -48,6 +57,118 @@ def _faces_to_pyvista(faces: np.ndarray) -> np.ndarray:
     out[:, 0] = 3
     out[:, 1:] = faces
     return out.ravel()
+
+
+def _layering_cn(mode: LayeringMode) -> str:
+    return {
+        LayeringMode.EQUAL_THICKNESS: "等厚",
+        LayeringMode.EQUAL_DELTA_N: "折射率 n 等差",
+        LayeringMode.EQUAL_DELTA_EPS: "介电常数 ε 等差",
+    }.get(mode, mode.value)
+
+
+def _prepare_grin_mesh(verts, faces, box_mm: float):
+    """与 TPMS_Mixer 预览一致：clean、三角化、裁剪到立方体域，大面数时降采样。"""
+    conn = _faces_to_pyvista(faces)
+    mesh = pv.PolyData(verts, conn)
+    try:
+        mesh = mesh.clean(tolerance=1e-6).triangulate()
+    except Exception:
+        try:
+            mesh = mesh.triangulate()
+        except Exception:
+            pass
+    try:
+        S = float(box_mm)
+        mesh.points = np.clip(np.asarray(mesh.points, dtype=np.float64), [0.0, 0.0, 0.0], [S, S, S])
+    except Exception:
+        pass
+    try:
+        if mesh.n_cells > 700_000:
+            mesh = mesh.decimate_pro(0.82)
+    except Exception:
+        pass
+    return mesh
+
+
+def _clip_mesh_for_sphere_view(mesh: pv.PolyData, box_mm: float, mode: str) -> pv.PolyData:
+    """
+    以包络立方体中心为球心，用轴对齐盒裁剪 TPMS 外壳（仅预览）。
+    - octant: x,y,z 均 ≥ 球心（1/8 球）
+    - quarter: x,y ≥ 球心，z 全高（1/4 球）
+    - hemisphere: z ≥ 球心（+Z 半球）
+    - full: 不裁剪
+    """
+    if mode == "full" or mesh.n_cells == 0:
+        return mesh
+    S = float(box_mm)
+    c = 0.5 * S
+    tol = 1e-4
+    # PyVista clip_box: xmin,xmax, ymin,ymax, zmin,zmax — 保留盒内部分
+    if mode == "octant":
+        bounds = (c - tol, S + tol, c - tol, S + tol, c - tol, S + tol)
+    elif mode == "quarter":
+        bounds = (c - tol, S + tol, c - tol, S + tol, -tol, S + tol)
+    elif mode == "hemisphere":
+        bounds = (-tol, S + tol, -tol, S + tol, c - tol, S + tol)
+    else:
+        return mesh
+    try:
+        out = mesh.clip_box(bounds=bounds, invert=False)
+        if out.n_cells > 0:
+            return out
+    except Exception:
+        pass
+    return mesh
+
+
+def _setup_grin_viewport(plotter, box_mm: float):
+    """与 TPMS_Mixer 类似的背景、网格、光照与抗锯齿（不修改其源码）。"""
+    eps = 1e-6
+    S = float(box_mm)
+    plotter.clear()
+    plotter.set_background("#eceff1")
+    try:
+        plotter.show_grid(
+            xtitle="X (mm)",
+            ytitle="Y (mm)",
+            ztitle="Z (mm)",
+            color="#546e7a",
+            grid="back",
+            location="outer",
+            bounds=(eps, S, eps, S, eps, S),
+            font_size=8,
+        )
+    except Exception:
+        plotter.show_grid()
+    plotter.add_axes()
+    try:
+        plotter.add_orientation_widget()
+    except Exception:
+        pass
+    try:
+        plotter.remove_all_lights()
+    except Exception:
+        pass
+    try:
+        plotter.enable_lightkit()
+    except Exception:
+        pass
+    try:
+        plotter.enable_anti_aliasing("ssaa")
+    except Exception:
+        try:
+            plotter.enable_anti_aliasing("fxaa")
+        except Exception:
+            pass
+    try:
+        plotter.enable_eye_dome_lighting()
+    except Exception:
+        pass
+    try:
+        plotter.disable_shadows()
+    except Exception:
+        pass
 
 
 class GrinMeshThread(QThread):
@@ -66,6 +187,27 @@ class GrinMeshThread(QThread):
             self.failed.emit(traceback.format_exc())
 
 
+class VFOptimizeThread(QThread):
+    """据 vf_measurement 代理迭代调整各壳 quantile_q。"""
+
+    finished_ok = Signal(object, object, object, object)
+    failed = Signal(str)
+
+    def __init__(self, params: dict, max_iter: int):
+        super().__init__()
+        self.params = params
+        self.max_iter = max_iter
+
+    def run(self):
+        try:
+            verts, faces, meta, extra, _hist = optimize_quantiles_iterative(
+                compute_grin_mesh, self.params, max_iter=self.max_iter
+            )
+            self.finished_ok.emit(verts, faces, meta, extra)
+        except Exception:
+            self.failed.emit(traceback.format_exc())
+
+
 class GrinMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -77,6 +219,8 @@ class GrinMainWindow(QMainWindow):
         self._meta = None
         self._extra: dict = {}
         self._thread: GrinMeshThread | None = None
+        self._mesh_pv_unclipped: pv.PolyData | None = None
+        self._d_box_last: float = 1.0
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -222,6 +366,27 @@ class GrinMainWindow(QMainWindow):
         self.sp_epsa.setRange(1.0, 1.05)
         self.sp_epsa.setValue(1.0)
         g4l.addWidget(self.sp_epsa, 4, 1)
+        g4l.addWidget(QLabel("包络余量 (mm/侧)"), 5, 0)
+        self.sp_margin = QDoubleSpinBox()
+        self.sp_margin.setRange(0.0, 100.0)
+        self.sp_margin.setDecimals(2)
+        self.sp_margin.setValue(0.0)
+        self.sp_margin.setToolTip("立方体边长 d=2R+2×余量；0 表示与直径 2R 一致。")
+        g4l.addWidget(self.sp_margin, 5, 1)
+        self.chk_measure_vf = QCheckBox("生成后蒙特卡洛实测 Vf（报告与曲线）")
+        self.chk_measure_vf.setChecked(True)
+        g4l.addWidget(self.chk_measure_vf, 6, 0, 1, 2)
+        g4l.addWidget(QLabel("Vf 优化最大迭代"), 7, 0)
+        self.sp_vf_iter = QSpinBox()
+        self.sp_vf_iter.setRange(1, 30)
+        self.sp_vf_iter.setValue(5)
+        g4l.addWidget(self.sp_vf_iter, 7, 1)
+        self.chk_mesh_octant = QCheckBox("体素域仅 1/8 卦限（+X+Y+Z，约减 7/8 算量）")
+        self.chk_mesh_octant.setChecked(False)
+        self.chk_mesh_octant.setToolTip(
+            "自 TPMS 场与壳层分位起仅用卦限子网格；壳内 |Phi| 非球对称，分位 iso 与「全球」略有差异，定稿请用未勾选。"
+        )
+        g4l.addWidget(self.chk_mesh_octant, 8, 0, 1, 2)
         left_l.addWidget(g4)
 
         # 导出路径
@@ -241,17 +406,39 @@ class GrinMainWindow(QMainWindow):
         g5l.addWidget(b2, 1, 2)
         left_l.addWidget(g5)
 
+        g6 = QGroupBox("3D 预览")
+        g6l = QGridLayout(g6)
+        g6l.addWidget(QLabel("显示范围（仅视图）"), 0, 0)
+        self.cmb_view_scope = QComboBox()
+        self.cmb_view_scope.addItem("1/8 球（默认）", "octant")
+        self.cmb_view_scope.addItem("1/4 球", "quarter")
+        self.cmb_view_scope.addItem("半球（+Z）", "hemisphere")
+        self.cmb_view_scope.addItem("全球", "full")
+        self.cmb_view_scope.setToolTip(
+            "相对包络立方体中心裁剪，便于观察径向分层；导出 STL 仍为完整网格。"
+        )
+        g6l.addWidget(self.cmb_view_scope, 0, 1)
+        hint = QLabel("1/8：+X+Y+Z 卦限；1/4：+X+Y 绕 Z；半球：Z≥中心；导出不受此项影响。")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#546e7a;font-size:11px;")
+        g6l.addWidget(hint, 1, 0, 1, 2)
+        left_l.addWidget(g6)
+
         row = QHBoxLayout()
         self.btn_curve = QPushButton("刷新设计曲线")
         self.btn_preview = QPushButton("生成 3D 网格")
+        self.btn_vf_opt = QPushButton("Vf 迭代优化")
         self.btn_export = QPushButton("导出 STL")
-        for b in (self.btn_curve, self.btn_preview, self.btn_export):
+        for b in (self.btn_curve, self.btn_preview, self.btn_vf_opt, self.btn_export):
             b.setMinimumHeight(34)
         self.btn_curve.clicked.connect(self._on_refresh_curves)
         self.btn_preview.clicked.connect(self._on_mesh)
+        self.btn_vf_opt.clicked.connect(self._on_vf_optimize)
         self.btn_export.clicked.connect(self._on_export)
+        self.btn_vf_opt.setToolTip("据蒙特卡洛带距代理逐壳调整分位，与 EMT 目标 Vf 对齐（耗时较长）。")
         row.addWidget(self.btn_curve)
         row.addWidget(self.btn_preview)
+        row.addWidget(self.btn_vf_opt)
         row.addWidget(self.btn_export)
         left_l.addLayout(row)
 
@@ -286,6 +473,8 @@ class GrinMainWindow(QMainWindow):
         self.sp_R.valueChanged.connect(self._update_lambda_label)
         self._update_lambda_label()
 
+        self.cmb_view_scope.currentIndexChanged.connect(self._on_view_scope_changed)
+
     def _browse_save(self, le: QLineEdit, filt: str):
         path, _ = QFileDialog.getSaveFileName(self, "保存", le.text(), filt)
         if path:
@@ -306,6 +495,12 @@ class GrinMainWindow(QMainWindow):
         self.lbl_lambda.setText(
             f"真空波长 λ0≈{lam:.4f} mm（c/f）；半径 R/λ0≈{ratio:.2f}（介质中需按 ε 修正，此处为粗估）"
         )
+
+    @staticmethod
+    def _box_mm_from_params(p: dict) -> float:
+        R = float(p["radius_mm"])
+        m = float(p.get("envelope_margin_mm", 0.0))
+        return 2.0 * R + 2.0 * m
 
     def _mesh_params(self) -> dict:
         major = self.cmb_major.currentData()
@@ -333,7 +528,148 @@ class GrinMainWindow(QMainWindow):
             "target_efficiency_pct": float(self.sp_eff.value()) if self.sp_eff.value() > 1e-6 else None,
             "d_c_mm": float(self.sp_dc.value()),
             "a_cell_mm": float(self.sp_a.value()) if self.sp_a.value() > 1e-9 else None,
+            "envelope_margin_mm": float(self.sp_margin.value()),
+            "measure_vf": self.chk_measure_vf.isChecked(),
+            "mesh_domain": "octant" if self.chk_mesh_octant.isChecked() else "full",
         }
+
+    def _on_view_scope_changed(self, _index: int):
+        if self._mesh_pv_unclipped is None:
+            return
+        self._refresh_grin_3d_view()
+
+    def _refresh_grin_3d_view(self):
+        """按「显示范围」重绘 3D（不改变顶点缓存，导出仍用完整网格）。"""
+        if self._mesh_pv_unclipped is None or self._mesh_pv_unclipped.n_cells == 0:
+            return
+        d_box = float(self._d_box_last)
+        mode = self.cmb_view_scope.currentData()
+        if not mode:
+            mode = "octant"
+        mesh_show = _clip_mesh_for_sphere_view(self._mesh_pv_unclipped, d_box, str(mode))
+        _setup_grin_viewport(self.plotter, d_box)
+        self.plotter.add_mesh(
+            mesh_show,
+            color=(0.14, 0.52, 0.96),
+            smooth_shading=True,
+            lighting=True,
+            ambient=0.10,
+            diffuse=0.95,
+            specular=0.85,
+            specular_power=45,
+        )
+        try:
+            self.plotter.renderer.ResetCameraClippingRange()
+        except Exception:
+            pass
+        self.plotter.view_isometric()
+        self.plotter.reset_camera()
+        try:
+            self.plotter.update()
+        except Exception:
+            pass
+
+    def _apply_grin_result(self, verts, faces, meta, extra: dict, p: dict, *, vf_opt_note: str = ""):
+        """生成或 Vf 优化完成后：更新 3D、曲线与状态栏。"""
+        nv, nf = len(verts), len(faces)
+        d_box = float(extra.get("box_mm", self._box_mm_from_params(p)))
+        if nv == 0 or nf == 0:
+            QMessageBox.warning(
+                self,
+                "空网格",
+                f"结果为空：顶点 {nv}，三角面 {nf}。请降低 res 或检查分层/材料参数。",
+            )
+            self.lbl_status.setText("网格为空，未显示 3D。")
+            return
+
+        self._verts = verts
+        self._faces = faces
+        self._meta = meta
+        self._extra = extra
+
+        hist = extra.get("vf_optimization_history")
+        hist_tail = ""
+        if isinstance(hist, list) and hist:
+            last = hist[-1]
+            rm = last.get("rmse")
+            hist_tail = f" Vf 优化末次 RMSE≈{rm:.4f}（{len(hist)} 步）。" if rm is not None else f" Vf 优化 {len(hist)} 步。"
+
+        self.lbl_status.setText(
+            f"顶点 {nv}，面 {nf}。包络边长≈{d_box:.3f} mm，TPMS K={extra.get('tpms_periods_K', '?')}，"
+            f"单胞边长≈{extra.get('a_cell_effective_mm', 0):.3f} mm。"
+            f" {extra.get('volume_note', '')} {extra.get('lattice_note', '')}{vf_opt_note}{hist_tail}"
+        )
+
+        mesh_pv = _prepare_grin_mesh(verts, faces, d_box)
+        if mesh_pv.n_cells == 0:
+            self._mesh_pv_unclipped = None
+            QMessageBox.warning(self, "空网格", "PyVista 未识别到三角面，无法显示 3D。")
+            self.lbl_status.setText("PolyData 无面片。")
+            return
+        self._mesh_pv_unclipped = mesh_pv
+        self._d_box_last = d_box
+        self._refresh_grin_3d_view()
+
+        product = LensProduct(p["lens_product"])
+        try:
+            mode = LayeringMode(p["layering_mode"])
+        except ValueError:
+            mode = LayeringMode.EQUAL_THICKNESS
+        rows, r_edges = build_shell_table(
+            p["radius_mm"],
+            p["n_layers"],
+            p["epsilon_air"],
+            p["epsilon_matrix"],
+            product,
+            mode,
+        )
+        stair = shell_stair_targets(
+            rows,
+            r_edges,
+            p["radius_mm"],
+            p["epsilon_air"],
+            p["epsilon_matrix"],
+            product,
+        )
+        layering_label = (
+            f"径向分层：{p['n_layers']} 层 · {_layering_cn(mode)} · "
+            f"包络 d≈{d_box:.3f} mm · TPMS K={extra.get('tpms_periods_K', '?')} · "
+            f"单胞边长≈{extra.get('a_cell_effective_mm', 0):.3f} mm"
+        )
+        dc = design_curves_sampled(
+            p["radius_mm"],
+            p["epsilon_air"],
+            p["epsilon_matrix"],
+            product,
+        )
+        lam = wavelength_mm_vacuum(p["frequency_ghz"])
+        ratio = p["radius_mm"] / lam if lam > 0 else None
+        au = extra.get("angular_uniformity")
+        a_est = extra.get("a_cell_effective_mm", extra.get("a_est_mm"))
+        center = np.array([d_box / 2, d_box / 2, d_box / 2], dtype=np.float64)
+        r_e_m = metrics_geo.r_edges_from_meta_layers(meta)
+        vf_bl = np.array([m["vf_solid_emt"] for m in meta], dtype=np.float64)
+        angular_phi = extra.get("angular_vf_phi")
+        if angular_phi is None:
+            angular_phi = metrics_geo.angular_vf_by_phi(verts, center, r_e_m, vf_bl)
+        self.plot_panel.update_curves(
+            dc["r_mm"],
+            dc["n_ideal"],
+            dc["n_phys"],
+            dc["epsilon_ideal"],
+            dc["epsilon_phys"],
+            dc["vf_solid_emt"],
+            a_est,
+            p.get("d_c_mm"),
+            au,
+            lam,
+            ratio,
+            p.get("target_efficiency_pct"),
+            stair=stair,
+            angular_phi=angular_phi,
+            layering_label=layering_label,
+            spec_audit_brief=GUI_SPEC_AUDIT_BRIEF,
+        )
 
     def _on_refresh_curves(self):
         try:
@@ -342,6 +678,32 @@ class GrinMainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", str(e))
             return
         product = LensProduct(p["lens_product"]) if p["lens_product"] in ("luneburg", "eaton") else LensProduct.LUNEBURG
+        try:
+            mode = LayeringMode(p["layering_mode"])
+        except ValueError:
+            mode = LayeringMode.EQUAL_THICKNESS
+        rows, r_edges = build_shell_table(
+            p["radius_mm"],
+            p["n_layers"],
+            p["epsilon_air"],
+            p["epsilon_matrix"],
+            product,
+            mode,
+        )
+        stair = shell_stair_targets(
+            rows,
+            r_edges,
+            p["radius_mm"],
+            p["epsilon_air"],
+            p["epsilon_matrix"],
+            product,
+        )
+        d_box = self._box_mm_from_params(p)
+        K_prev, k_meta = metrics_geo.resolve_tpms_periods_K(d_box, p["res"], r_edges, p.get("a_cell_mm"))
+        layering_label = (
+            f"径向分层：{p['n_layers']} 层 · {_layering_cn(mode)} · "
+            f"包络 d≈{d_box:.3f} mm · TPMS K={K_prev} · 单胞边长≈{k_meta['a_effective_mm']:.3f} mm"
+        )
         dc = design_curves_sampled(
             p["radius_mm"],
             p["epsilon_air"],
@@ -349,24 +711,26 @@ class GrinMainWindow(QMainWindow):
             product,
         )
         lam = wavelength_mm_vacuum(p["frequency_ghz"])
-        R = p["radius_mm"]
+        R = float(p["radius_mm"])
         ratio = R / lam if lam > 0 else None
         eff = p.get("target_efficiency_pct")
-        a_show = p.get("a_cell_mm")
-        if a_show is None:
-            est = metrics_geo.estimate_a_dc_from_res_and_box(p["res"], 2.0 * R)
-            a_show = est.get("a_est_mm")
+        a_show = float(k_meta["a_effective_mm"])
         self.plot_panel.update_curves(
             dc["r_mm"],
-            dc["n_r"],
-            dc["epsilon_r"],
-            dc["vf_r"],
+            dc["n_ideal"],
+            dc["n_phys"],
+            dc["epsilon_ideal"],
+            dc["epsilon_phys"],
+            dc["vf_solid_emt"],
             a_show,
             p.get("d_c_mm"),
             None,
             lam,
             ratio,
             eff,
+            stair=stair,
+            angular_phi=None,
+            layering_label=layering_label,
         )
         self.lbl_status.setText("已刷新目标剖面曲线（未生成网格）。3D 需点击「生成 3D 网格」。")
 
@@ -379,7 +743,7 @@ class GrinMainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", str(e))
             return
 
-        self.btn_preview.setEnabled(False)
+        self._set_mesh_buttons_busy(True)
         dlg = QProgressDialog("正在生成网格…", "", 0, 0, self)
         dlg.setCancelButton(None)
         dlg.setWindowModality(Qt.WindowModal)
@@ -390,59 +754,57 @@ class GrinMainWindow(QMainWindow):
 
         def ok(verts, faces, meta, extra):
             dlg.reset()
-            self.btn_preview.setEnabled(True)
-            self._verts = verts
-            self._faces = faces
-            self._meta = meta
-            self._extra = extra
-            self.lbl_status.setText(
-                f"顶点 {len(verts)}，面 {len(faces)}。"
-                f" 提示：为等值面外壳，孔隙在实体内部；可旋转查看。"
-                f" {extra.get('volume_note', '')}"
-            )
-            poly = pv.PolyData(verts, _faces_to_pyvista(faces))
-            self.plotter.clear()
-            self.plotter.show_grid()
-            self.plotter.add_axes()
-            self.plotter.add_mesh(
-                poly,
-                color=(0.22, 0.55, 0.92),
-                show_edges=True,
-                edge_color="#37474f",
-                line_width=0.35,
-                smooth_shading=True,
-                opacity=0.92,
-            )
-            self.plotter.reset_camera()
-
-            product = LensProduct(p["lens_product"])
-            dc = design_curves_sampled(
-                p["radius_mm"],
-                p["epsilon_air"],
-                p["epsilon_matrix"],
-                product,
-            )
-            lam = wavelength_mm_vacuum(p["frequency_ghz"])
-            ratio = p["radius_mm"] / lam if lam > 0 else None
-            au = extra.get("angular_uniformity")
-            a_est = extra.get("a_est_mm")
-            self.plot_panel.update_curves(
-                dc["r_mm"],
-                dc["n_r"],
-                dc["epsilon_r"],
-                dc["vf_r"],
-                a_est,
-                p.get("d_c_mm"),
-                au,
-                lam,
-                ratio,
-                p.get("target_efficiency_pct"),
-            )
+            self._set_mesh_buttons_busy(False)
+            self._apply_grin_result(verts, faces, meta, extra, p)
 
         def fail(msg):
             dlg.reset()
-            self.btn_preview.setEnabled(True)
+            self._set_mesh_buttons_busy(False)
             QMessageBox.critical(self, "失败", msg)
+
+        self._thread.finished_ok.connect(ok)
+        self._thread.failed.connect(fail)
+        self._thread.start()
+
+    def _set_mesh_buttons_busy(self, busy: bool):
+        self.btn_preview.setEnabled(not busy)
+        self.btn_vf_opt.setEnabled(not busy)
+
+    def _on_vf_optimize(self):
+        if self._thread is not None and self._thread.isRunning():
+            return
+        try:
+            p = self._mesh_params()
+        except ValueError as e:
+            QMessageBox.warning(self, "提示", str(e))
+            return
+        if not p.get("measure_vf", True):
+            QMessageBox.information(
+                self,
+                "提示",
+                "已关闭「生成后蒙特卡洛实测 Vf」。优化依赖实测代理，将临时开启 measure_vf。",
+            )
+            p = dict(p)
+            p["measure_vf"] = True
+
+        self._set_mesh_buttons_busy(True)
+        dlg = QProgressDialog("Vf 分位迭代优化中（可能较慢）…", "", 0, 0, self)
+        dlg.setCancelButton(None)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(0)
+        dlg.show()
+
+        self._thread = VFOptimizeThread(p, int(self.sp_vf_iter.value()))
+
+        def ok(verts, faces, meta, extra):
+            dlg.reset()
+            self._set_mesh_buttons_busy(False)
+            self._apply_grin_result(verts, faces, meta, extra, p, vf_opt_note=" 已完成分位迭代。")
+
+        def fail(msg):
+            dlg.reset()
+            self._set_mesh_buttons_busy(False)
+            QMessageBox.critical(self, "Vf 优化失败", msg)
 
         self._thread.finished_ok.connect(ok)
         self._thread.failed.connect(fail)
@@ -476,6 +838,7 @@ class GrinMainWindow(QMainWindow):
 def run_app():
     import sys
 
+    pv.global_theme.smooth_shading = True
     app = QApplication(sys.argv)
     w = GrinMainWindow()
     w.show()

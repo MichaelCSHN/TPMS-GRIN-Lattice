@@ -13,6 +13,8 @@ geometry:
     min: 50.0
     max: 150.0
   radial_layers: 6             # 3 ~ 10
+  # 立方体包络边长 d = 2*R + 2*envelope_margin_mm（每侧余量，mm）
+  envelope_margin_mm: 0.0
 
 material:
   epsilon_matrix:
@@ -20,6 +22,11 @@ material:
     min: 2.5
     max: 3.0
   inclusion: air               # epsilon ≈ 1
+
+# 与 grin.cli.compute_grin_mesh 对齐（CLI 会读取并传入）
+mesh:
+  mesh_domain: full            # full | octant（octant 约 1/8 体素，壳层分位与 full 略有差异）
+  measure_vf: true             # 是否在报告中写入 vf_measurement / angular_vf_phi
 
 calibration:
   vf_tolerance: 0.01           # |Vf_geom - Vf_target| 默认容差，可调 0.005~0.02
