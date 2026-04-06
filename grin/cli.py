@@ -9,9 +9,12 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import yaml
 
-from grin import emt, luneburg
+from grin import emt
+from grin.lens_profiles import LensProduct, LayeringMode, build_shell_table
+from grin import metrics_geo
 from grin.tpms_mixer_bridge import get_mixer
 from grin.tpms_radial_shells import compute_tpms_radial_shell_quantiles
 
@@ -40,25 +43,46 @@ def compute_grin_mesh(
     epsilon_air: float,
     res: int,
     type_tpms: str = "G",
+    *,
+    type_b: str | None = None,
+    mix_enabled: bool = False,
+    mix_dir: str = "Z",
+    trans_center: float = 0.5,
+    trans_k: float = 6.0,
+    lens_product: str = "luneburg",
+    layering_mode: str = "equal_thickness",
+    geometry_shape: str = "sphere_in_cube",
+    frequency_ghz: float = 10.0,
+    target_efficiency_pct: float | None = None,
+    d_c_mm: float = 0.4,
+    a_cell_mm: float | None = None,
 ) -> tuple:
     """
-    仅计算龙伯分层 TPMS 网格，不写文件。
+    计算 GRIN 分层 TPMS 网格，不写文件。
     返回 (verts, faces, meta_layers, report_extra)
     """
-    layers = luneburg.luneburg_layers_table(radius_mm, n_layers, epsilon_air, epsilon_matrix)
-    r_edges, _ = luneburg.build_radial_layers(radius_mm, n_layers)
+    try:
+        product = LensProduct(lens_product)
+    except ValueError:
+        product = LensProduct.LUNEBURG
+    try:
+        mode = LayeringMode(layering_mode)
+    except ValueError:
+        mode = LayeringMode.EQUAL_THICKNESS
+
+    rows, r_edges = build_shell_table(radius_mm, n_layers, epsilon_air, epsilon_matrix, product, mode)
 
     quantiles = []
     meta_layers = []
-    for lay in layers:
-        vf_s = emt.invert_vf_solid_for_epsilon(lay.epsilon_target, epsilon_matrix, epsilon_air)
+    for row in rows:
+        vf_s = emt.invert_vf_solid_for_epsilon(row.epsilon_target, epsilon_matrix, epsilon_air)
         q = float(max(0.001, min(0.999, vf_s)))
         quantiles.append(q)
         meta_layers.append(
             {
-                "index": lay.index,
-                "r_mm": [lay.r_inner_mm, lay.r_outer_mm],
-                "epsilon_target": lay.epsilon_target,
+                "index": row.index,
+                "r_mm": [row.r_inner, row.r_outer],
+                "epsilon_target": row.epsilon_target,
                 "vf_solid_emt": vf_s,
                 "quantile_q": q,
             }
@@ -66,7 +90,11 @@ def compute_grin_mesh(
 
     mod = get_mixer()
     st = mod.AppState()
-    st.typeA = st.typeB = type_tpms
+    st.typeA = type_tpms
+    st.typeB = (type_b if mix_enabled and type_b else type_tpms)
+    st.dir = mix_dir if mix_dir in ("Z", "X", "XZ") else "Z"
+    st.trans_center = float(trans_center)
+    st.trans_k = float(trans_k)
     st.Kx = st.Ky = st.Kz = 2
     d = 2.0 * float(radius_mm)
     st.Sx = st.Sy = st.Sz = d
@@ -74,7 +102,19 @@ def compute_grin_mesh(
 
     verts, faces = compute_tpms_radial_shell_quantiles(st, res, list(r_edges), quantiles)
 
-    report_extra: dict = {}
+    report_extra: dict = {
+        "lens_product": product.value,
+        "layering_mode": mode.value,
+        "geometry_shape": geometry_shape,
+        "frequency_ghz": frequency_ghz,
+        "target_efficiency_pct": target_efficiency_pct,
+        "d_c_mm": d_c_mm,
+        "mix_enabled": mix_enabled,
+    }
+    est = metrics_geo.estimate_a_dc_from_res_and_box(res, d)
+    report_extra["a_est_mm"] = a_cell_mm if a_cell_mm is not None else est["a_est_mm"]
+    report_extra["a_est_note"] = est.get("note", "")
+
     try:
         import trimesh
 
@@ -91,6 +131,11 @@ def compute_grin_mesh(
     except Exception as e:
         report_extra["volume_note"] = f"trimesh 体积未计算: {e}"
 
+    center = np.array([d / 2, d / 2, d / 2], dtype=np.float64)
+    ri, ro = 0.25 * float(radius_mm), 0.85 * float(radius_mm)
+    au = metrics_geo.angular_uniformity_cv(verts, center, ri, ro)
+    report_extra["angular_uniformity"] = au
+
     return verts, faces, meta_layers, report_extra
 
 
@@ -103,9 +148,10 @@ def run_grin_export(
     out_stl: Path,
     type_tpms: str = "G",
     report_json: Path | None = None,
+    **kwargs,
 ) -> dict:
     verts, faces, meta_layers, report_extra = compute_grin_mesh(
-        radius_mm, n_layers, epsilon_matrix, epsilon_air, res, type_tpms
+        radius_mm, n_layers, epsilon_matrix, epsilon_air, res, type_tpms, **kwargs
     )
 
     mod = get_mixer()

@@ -50,10 +50,11 @@ See `grin/README.md` for module layout. The original GUI file `TPMS_Mixer_v1.1.0
 
 ```bash
 conda activate tpms
+pip install -r requirements.txt
 python grin_gui.py
 ```
 
-PySide6 + PyVista: parameter panel, 3D preview, export STL + JSON.
+PySide6 + Matplotlib + PyVista：晶格大类/子类、可选 TPMS 混合、龙伯/伊顿目标、等厚或 Δn/Δε 分层、工艺参数；**n(r)/ε(r)/Vf(r)** 曲线、角向均匀性占位、**3D** 预览与 STL/JSON 导出。实现位于 `grin/gui/`。
 
 ---
 

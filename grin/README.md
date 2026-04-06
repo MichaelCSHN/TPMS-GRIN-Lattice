@@ -15,6 +15,8 @@ conda activate tpms
 python grin_gui.py
 ```
 
+入口为根目录 `grin_gui.py`，逻辑在 **`grin/gui/main_window.py`**，绘图在 **`grin/gui/plot_panel.py`**。剖面/分层见 **`grin/lens_profiles.py`**。
+
 ### 命令行
 
 ```bash

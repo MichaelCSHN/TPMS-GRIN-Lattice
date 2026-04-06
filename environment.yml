@@ -16,3 +16,4 @@ dependencies:
     - pyvistaqt
     - pyyaml
     - trimesh
+    - matplotlib

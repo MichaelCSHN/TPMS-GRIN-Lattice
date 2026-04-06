@@ -8,3 +8,4 @@ pyvistaqt
 vtk
 pyyaml
 trimesh
+matplotlib
