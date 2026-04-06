@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 import pyvista as pv
 
 from grin.cli import compute_grin_mesh
+from grin import metrics_geo
 from grin.lens_profiles import LensProduct, design_curves_sampled, wavelength_mm_vacuum, LayeringMode
 from grin.gui.plot_panel import GrinPlotPanel
 
@@ -129,6 +130,16 @@ class GrinMainWindow(QMainWindow):
         self.sp_k.setRange(0.5, 30.0)
         self.sp_k.setValue(6.0)
         g2l.addWidget(self.sp_k, 4, 1)
+
+        def _sync_mix_ui():
+            en = self.chk_mix.isChecked()
+            self.cmb_b.setEnabled(en)
+            self.cmb_dir.setEnabled(en)
+            self.sp_d0.setEnabled(en)
+            self.sp_k.setEnabled(en)
+
+        self.chk_mix.toggled.connect(lambda _: _sync_mix_ui())
+        _sync_mix_ui()
         left_l.addWidget(g2)
 
         # 3 设计目标
@@ -145,12 +156,14 @@ class GrinMainWindow(QMainWindow):
         self.cmb_lens.addItem("龙伯 Luneburg", "luneburg")
         self.cmb_lens.addItem("伊顿 Eaton（线性 ε 占位）", "eaton")
         g3l.addWidget(self.cmb_lens, 1, 1)
-        g3l.addWidget(QLabel("目标效率 % (相对理想)"), 2, 0)
+        g3l.addWidget(QLabel("目标效率 (%)"), 2, 0)
         self.sp_eff = QDoubleSpinBox()
         self.sp_eff.setRange(0.0, 100.0)
         self.sp_eff.setDecimals(1)
-        self.sp_eff.setSpecialValueText("—")
+        self.sp_eff.setSpecialValueText("未填")
+        self.sp_eff.setMinimum(0.0)
         self.sp_eff.setValue(0.0)
+        self.sp_eff.setToolTip("0 = 不记录目标效率；填写范围为 0–100 的百分数（仅存档，不参与自动优化）。")
         g3l.addWidget(self.sp_eff, 2, 1)
         g3l.addWidget(QLabel("特征尺寸：半径 R (mm)"), 3, 0)
         self.sp_R = QDoubleSpinBox()
@@ -339,19 +352,23 @@ class GrinMainWindow(QMainWindow):
         R = p["radius_mm"]
         ratio = R / lam if lam > 0 else None
         eff = p.get("target_efficiency_pct")
+        a_show = p.get("a_cell_mm")
+        if a_show is None:
+            est = metrics_geo.estimate_a_dc_from_res_and_box(p["res"], 2.0 * R)
+            a_show = est.get("a_est_mm")
         self.plot_panel.update_curves(
             dc["r_mm"],
             dc["n_r"],
             dc["epsilon_r"],
             dc["vf_r"],
-            p.get("a_cell_mm"),
+            a_show,
             p.get("d_c_mm"),
             None,
             lam,
             ratio,
             eff,
         )
-        self.lbl_status.setText("已刷新目标剖面曲线（未生成网格）。")
+        self.lbl_status.setText("已刷新目标剖面曲线（未生成网格）。3D 需点击「生成 3D 网格」。")
 
     def _on_mesh(self):
         if self._thread is not None and self._thread.isRunning():
@@ -379,13 +396,23 @@ class GrinMainWindow(QMainWindow):
             self._meta = meta
             self._extra = extra
             self.lbl_status.setText(
-                f"顶点 {len(verts)}，面 {len(faces)}。{extra.get('volume_note', '')}"
+                f"顶点 {len(verts)}，面 {len(faces)}。"
+                f" 提示：为等值面外壳，孔隙在实体内部；可旋转查看。"
+                f" {extra.get('volume_note', '')}"
             )
             poly = pv.PolyData(verts, _faces_to_pyvista(faces))
             self.plotter.clear()
             self.plotter.show_grid()
             self.plotter.add_axes()
-            self.plotter.add_mesh(poly, color=(0.2, 0.55, 0.95))
+            self.plotter.add_mesh(
+                poly,
+                color=(0.22, 0.55, 0.92),
+                show_edges=True,
+                edge_color="#37474f",
+                line_width=0.35,
+                smooth_shading=True,
+                opacity=0.92,
+            )
             self.plotter.reset_camera()
 
             product = LensProduct(p["lens_product"])

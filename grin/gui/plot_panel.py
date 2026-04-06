@@ -6,9 +6,12 @@ import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+from grin.gui.mpl_setup import configure_matplotlib_fonts
+
 
 class GrinPlotPanel(FigureCanvas):
     def __init__(self, parent=None):
+        configure_matplotlib_fonts()
         self.fig = Figure(figsize=(7, 6), layout="tight")
         super().__init__(self.fig)
         self.setParent(parent)
@@ -50,7 +53,7 @@ class GrinPlotPanel(FigureCanvas):
 
         self.ax_eps.plot(r_mm, eps_r, color="#2e7d32")
         self.ax_eps.set_xlabel("r (mm)")
-        self.ax_eps.set_ylabel("ε(r)")
+        self.ax_eps.set_ylabel("epsilon(r)")  # 避免部分字体缺希腊字母
 
         self.ax_vf.plot(r_mm, vf_r, color="#c62828")
         self.ax_vf.set_xlabel("r (mm)")
@@ -66,8 +69,8 @@ class GrinPlotPanel(FigureCanvas):
             lines.append(f"胞元尺度 a ≈ {a_mm:.4f} mm（粗估）")
         if d_c_mm is not None:
             lines.append(f"最小线径约束 d_c = {d_c_mm:.4f} mm")
-        if target_eff_pct is not None:
-            lines.append(f"目标效率（相对理想透镜）: {target_eff_pct:.1f} %（记录用）")
+        if target_eff_pct is not None and target_eff_pct > 1e-6:
+            lines.append(f"目标效率（相对理想透镜）: {target_eff_pct:.1f} %（仅记录，未参与优化）")
         if angular and angular.get("cv") is not None:
             lines.append(f"角向均匀性 CV(φ) ≈ {angular['cv']:.4f}（顶点方位分箱，占位）")
         if not lines:
